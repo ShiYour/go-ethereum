@@ -427,7 +427,7 @@ func (srv *Server) run(dialstate dialer) {
 		i := 0
 		for ; len(runningTasks) < maxActiveDialTasks && i < len(ts); i++ {
 			t := ts[i]
-			glog.V(logger.Detail).Infoln("new task:", t)
+			glog.V(logger.Info).Infoln("new task:", t)
 			go func() { t.Do(srv); taskdone <- t }()
 			runningTasks = append(runningTasks, t)
 		}
@@ -450,13 +450,13 @@ running:
 		select {
 		case <-srv.quit:
 			// The server was stopped. Run the cleanup logic.
-			glog.V(logger.Detail).Infoln("<-quit: spinning down")
+			glog.V(logger.Info).Infoln("<-quit: spinning down")
 			break running
 		case n := <-srv.addstatic:
 			// This channel is used by AddPeer to add to the
 			// ephemeral static peer list. Add it to the dialer,
 			// it will keep the node connected.
-			glog.V(logger.Detail).Infoln("<-addstatic:", n)
+			glog.V(logger.Info).Infoln("<-addstatic:", n)
 			dialstate.addStatic(n)
 		case op := <-srv.peerOp:
 			// This channel is used by Peers and PeerCount.
@@ -466,7 +466,7 @@ running:
 			// A task got done. Tell dialstate about it so it
 			// can update its state and remove it from the active
 			// tasks list.
-			glog.V(logger.Detail).Infoln("<-taskdone:", t)
+			glog.V(logger.Info).Infoln("<-taskdone:", t)
 			dialstate.taskDone(t, time.Now())
 			delTask(t)
 		case c := <-srv.posthandshake:
@@ -476,16 +476,16 @@ running:
 				// Ensure that the trusted flag is set before checking against MaxPeers.
 				c.flags |= trustedConn
 			}
-			glog.V(logger.Detail).Infoln("<-posthandshake:", c)
+			glog.V(logger.Info).Infoln("<-posthandshake:", c)
 			// TODO: track in-progress inbound node IDs (pre-Peer) to avoid dialing them.
 			c.cont <- srv.encHandshakeChecks(peers, c)
 		case c := <-srv.addpeer:
 			// At this point the connection is past the protocol handshake.
 			// Its capabilities are known and the remote identity is verified.
-			glog.V(logger.Detail).Infoln("<-addpeer:", c)
+			glog.V(logger.Info).Infoln("<-addpeer:", c)
 			err := srv.protoHandshakeChecks(peers, c)
 			if err != nil {
-				glog.V(logger.Detail).Infof("Not adding %v as peer: %v", c, err)
+				glog.V(logger.Info).Infof("Not adding %v as peer: %v", c, err)
 			} else {
 				// The handshakes are done and it passed all checks.
 				p := newPeer(c, srv.Protocols)
@@ -498,7 +498,7 @@ running:
 			c.cont <- err
 		case p := <-srv.delpeer:
 			// A peer disconnected.
-			glog.V(logger.Detail).Infoln("<-delpeer:", p)
+			glog.V(logger.Info).Infoln("<-delpeer:", p)
 			delete(peers, p.ID())
 		}
 	}
@@ -514,10 +514,10 @@ running:
 	// Wait for peers to shut down. Pending connections and tasks are
 	// not handled here and will terminate soon-ish because srv.quit
 	// is closed.
-	glog.V(logger.Detail).Infof("ignoring %d pending tasks at spindown", len(runningTasks))
+	glog.V(logger.Info).Infof("ignoring %d pending tasks at spindown", len(runningTasks))
 	for len(peers) > 0 {
 		p := <-srv.delpeer
-		glog.V(logger.Detail).Infoln("<-delpeer (spindown):", p)
+		glog.V(logger.Info).Infoln("<-delpeer (spindown):", p)
 		delete(peers, p.ID())
 	}
 }
@@ -578,16 +578,16 @@ func (srv *Server) listenLoop() {
 		for {
 			fd, err = srv.listener.Accept()
 			if tempErr, ok := err.(tempError); ok && tempErr.Temporary() {
-				glog.V(logger.Debug).Infof("Temporary read error: %v", err)
+				glog.V(logger.Info).Infof("Temporary read error: %v", err)
 				continue
 			} else if err != nil {
-				glog.V(logger.Debug).Infof("Read error: %v", err)
+				glog.V(logger.Info).Infof("Read error: %v", err)
 				return
 			}
 			break
 		}
 		fd = newMeteredConn(fd, true)
-		glog.V(logger.Debug).Infof("Accepted conn %v\n", fd.RemoteAddr())
+		glog.V(logger.Info).Infof("Accepted conn %v\n", fd.RemoteAddr())
 
 		// Spawn the handler. It will give the slot back when the connection
 		// has been established.
@@ -614,36 +614,36 @@ func (srv *Server) setupConn(fd net.Conn, flags connFlag, dialDest *discover.Nod
 	// Run the encryption handshake.
 	var err error
 	if c.id, err = c.doEncHandshake(srv.PrivateKey, dialDest); err != nil {
-		glog.V(logger.Debug).Infof("%v faild enc handshake: %v", c, err)
+		glog.V(logger.Info).Infof("%v faild enc handshake: %v", c, err)
 		c.close(err)
 		return
 	}
 	// For dialed connections, check that the remote public key matches.
 	if dialDest != nil && c.id != dialDest.ID {
 		c.close(DiscUnexpectedIdentity)
-		glog.V(logger.Debug).Infof("%v dialed identity mismatch, want %x", c, dialDest.ID[:8])
+		glog.V(logger.Info).Infof("%v dialed identity mismatch, want %x", c, dialDest.ID[:8])
 		return
 	}
 	if err := srv.checkpoint(c, srv.posthandshake); err != nil {
-		glog.V(logger.Debug).Infof("%v failed checkpoint posthandshake: %v", c, err)
+		glog.V(logger.Info).Infof("%v failed checkpoint posthandshake: %v", c, err)
 		c.close(err)
 		return
 	}
 	// Run the protocol handshake
 	phs, err := c.doProtoHandshake(srv.ourHandshake)
 	if err != nil {
-		glog.V(logger.Debug).Infof("%v failed proto handshake: %v", c, err)
+		glog.V(logger.Info).Infof("%v failed proto handshake: %v", c, err)
 		c.close(err)
 		return
 	}
 	if phs.ID != c.id {
-		glog.V(logger.Debug).Infof("%v wrong proto handshake identity: %x", c, phs.ID[:8])
+		glog.V(logger.Info).Infof("%v wrong proto handshake identity: %x", c, phs.ID[:8])
 		c.close(DiscUnexpectedIdentity)
 		return
 	}
 	c.caps, c.name = phs.Caps, phs.Name
 	if err := srv.checkpoint(c, srv.addpeer); err != nil {
-		glog.V(logger.Debug).Infof("%v failed checkpoint addpeer: %v", c, err)
+		glog.V(logger.Info).Infof("%v failed checkpoint addpeer: %v", c, err)
 		c.close(err)
 		return
 	}
@@ -671,7 +671,7 @@ func (srv *Server) checkpoint(c *conn, stage chan<- *conn) error {
 // it waits until the Peer logic returns and removes
 // the peer.
 func (srv *Server) runPeer(p *Peer) {
-	glog.V(logger.Debug).Infof("Added %v\n", p)
+	glog.V(logger.Info).Infof("Added %v\n", p)
 	srvjslog.LogJson(&logger.P2PConnected{
 		RemoteId:            p.ID().String(),
 		RemoteAddress:       p.RemoteAddr().String(),
@@ -687,7 +687,7 @@ func (srv *Server) runPeer(p *Peer) {
 	// before returning, so this send should not select on srv.quit.
 	srv.delpeer <- p
 
-	glog.V(logger.Debug).Infof("Removed %v (%v)\n", p, discreason)
+	glog.V(logger.Info).Infof("Removed %v (%v)\n", p, discreason)
 	srvjslog.LogJson(&logger.P2PDisconnected{
 		RemoteId:       p.ID().String(),
 		NumConnections: srv.PeerCount(),
